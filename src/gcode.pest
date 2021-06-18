@@ -1,0 +1,39 @@
+num = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
+int = { ("+" | "-")? ~ ASCII_DIGIT+ }
+
+expr = { cmd? ~ COMMENT? }
+cmd = _{ HOME | MOVE | PEN | ARC }
+HOME = { "G28" }
+MOVE = { "G1" ~ ((X ~ Y) | (Y ~ X)) }
+ARC = { (CLKW | ANTICLKW) ~ (
+	(X ~ (
+    	(Y ~ ((I ~ J) | (J ~ I))) |
+        (I ~ ((Y ~ J) | (J ~ Y))) |
+        (J ~ ((Y ~ I) | (I ~ Y)))
+    )) | (Y ~ (
+    	(X ~ ((I ~ J) | (J ~ I))) |
+        (I ~ ((X ~ J) | (J ~ X))) |
+        (J ~ ((X ~ I) | (I ~ X)))
+    )) | ( I ~ (
+    	(J ~ ((X ~ Y) | (Y ~ X))) |
+        (X ~ ((J ~ Y) | (Y ~ J))) |
+        (Y ~ ((J ~ X) | (X ~ J)))
+    )) | ( J ~ (
+    	(I ~ ((X ~ Y) | (Y ~ X))) |
+        (X ~ ((I ~ Y) | (Y ~ I))) |
+        (Y ~ ((I ~ X) | (X ~ I)))
+    ))
+) }
+CLKW = { "G2" }
+ANTICLKW = { "G3" }
+PEN = { "M280 P0 S" ~ num }
+
+X = { "X" ~ num }
+Y = { "Y" ~ num }
+I = { "I" ~ num }
+J = { "J" ~ num }
+
+file = _{ SOI ~ (expr ~ NEWLINE)* ~ expr? ~ EOI }
+
+WHITESPACE = _{ " " | "\t" }
+COMMENT = { ";" ~ (!NEWLINE ~ ANY)* }
