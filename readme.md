@@ -51,5 +51,5 @@ TODO:
 - [ ] better loop management for hot reloading
 - [ ] more file maniplulation features
 - [ ] move in grid support
-- [ ] draw mode?
+- [X] draw mode?
 - [ ] more debug options, e.g. show coordinates
