@@ -29,7 +29,19 @@ The application is programmed in rust with the [nannou library](https://nannou.c
 It furthermore supports a subcommand `transform`, which
 allows you to transform a file by translation and dilation.
 
+## Keyboard commands and editing features
+
 In the graphical app, a few keyboard commands are enabled. To increase a value corresponding to a <kbd>key</kbd>, just press <kbd>key</kbd> and to decrease press <kbd>shift</kbd> + <kbd>key</kbd>. For bigger steps combine these combination with a further <kbd>ctrl</kbd>.
+
+Furthermore, I introduced in Version 0.3.0 the ability to extend existing g-code files. Simply press
+- <kbd>1</kbd> for `G1` mode
+- <kbd>2</kbd> for `G2` mode
+- <kbd>3</kbd> for `G3` mode
+- <kbd>0</kbd> to exit the modes
+
+and choose the coordinate with a left mouse click. One also can now undo and redo these added commands with <kbd>Z</kbd> and <kbd>Y</kbd> and save these changes to a new file with <kbd>S</kbd>. <kbd>P</kbd> changes the penmode and <kbd>H</kbd> returns to to home.
+
+Last but not least, right-clicking prints the mouse coordinates to console.
 
 ## Room to improve
 

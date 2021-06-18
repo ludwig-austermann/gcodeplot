@@ -14,6 +14,7 @@ pub enum GCodeExpr<'a> {
 
 /// without Comments, for faster and more memory efficient usecases
 #[allow(non_snake_case)]
+#[derive(Copy, Clone)]
 pub enum CommentlessGCodeExpr {
     Home,
     Move { X: f32, Y: f32 },
@@ -43,6 +44,21 @@ impl GCodeExpr<'_> {
             GCodeExpr::Arc{CLKW: clkw, X: x, Y: y, I: i, J: j} => CommentlessGCodeExpr::Arc{CLKW: *clkw, X: *x, Y: *y, I: *i, J: *j},
             GCodeExpr::Pen(down) => CommentlessGCodeExpr::Pen(*down),
             GCodeExpr::Comment(_) => panic!("Tried to convert Comment to commentless..."),
+        }
+    }
+}
+
+impl CommentlessGCodeExpr {
+    pub fn as_str(&self) -> String {
+        match self {
+            CommentlessGCodeExpr::Home => "G28".to_string(),
+            CommentlessGCodeExpr::Move{X: x, Y: y} => format!("G1 X{} Y{}", x, y),
+            CommentlessGCodeExpr::Arc{CLKW: clkw, X: x, Y: y, I: i, J: j} => if *clkw {
+                format!("G2 X{} Y{} I{} J{}", x, y, i, j)
+            } else {
+                format!("G3 X{} Y{} I{} J{}", x, y, i, j)
+            },
+            CommentlessGCodeExpr::Pen(down) => if *down { "M280 P0 S50".to_string() } else { "M280 P0 S0".to_string() },
         }
     }
 }
@@ -138,4 +154,15 @@ pub fn save(filename: &str, commands: Vec<(usize, GCodeExpr)>) {
         })
         //collect::<Vec<String>>().join("\n")
     ).expect("Unable to save the gcode.");
+}
+
+/// saves new commands on tope
+pub fn resave(filename: &str, commands: &Vec<CommentlessGCodeExpr>) {
+        let oldfile = std::fs::read_to_string(filename).expect("unable to open the file.");
+        std::fs::write(
+            format!("{}_added.gcode", filename.strip_suffix(".gcode").expect("Expected gcode file")),
+            format!("{}\n; added by gcodeplot\n{}", oldfile,
+                commands.iter().map(|cmd| cmd.as_str()).collect::<Vec<String>>().join("\n")
+            )
+        ).expect("Unable to save the gcode.");
 }
