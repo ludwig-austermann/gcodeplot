@@ -2,8 +2,8 @@
 
 *Note that this app purposely supports only a very minimal subset of g-code features, since it is primarily supposed for educational purposes.*
 
-![Screenshot of version 0.2](v0.2_screenshot.png)
-![Screenshot of debugging features 0.2](v0.2_screenshot_debugging.png)
+![Screenshot of version 0.2](img/v0.2_screenshot.png)
+![Screenshot of debugging features 0.2](img/v0.2_screenshot_debugging.png)
 *The pictures show a screenshot without debugging features and a zoomed screenshot of debugging features.*
 
 ## Description
