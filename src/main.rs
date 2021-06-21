@@ -58,7 +58,7 @@ fn main() {
 fn start_app(app: &App) -> AppSettings {
 
     let matches = clap_app!(myapp =>
-        (version: "0.3.0")
+        (version: "0.3.1")
         (author: "Ludwig Austermann <github.com/ludwig-austermann/gcodeplot>")
         (about: "Draw simple gcode.")
         (@arg INPUT: +required "Sets the input g-code file to use")
@@ -136,7 +136,7 @@ fn start_app(app: &App) -> AppSettings {
         mouse_pos: None,
         adding_commands: Vec::new(),
         deleted_command: None,
-        current_pos: vec![Vector2::zero()],
+        current_pos: vec![Vec2::ZERO],
         saved: true,
         current_command: 0,
         temp_point: None,
@@ -198,7 +198,7 @@ fn handle_keypress(_app: &App, settings: &mut AppSettings, key: Key) {
         Key::Key3 => { settings.current_command = 3 },
         Key::H => {
             settings.adding_commands.push(parse::CommentlessGCodeExpr::Home);
-            settings.current_pos.push(Vector2::zero());
+            settings.current_pos.push(Vec2::ZERO);
         }
         Key::Key0 => { settings.current_command = 0; settings.temp_point = None },
         Key::Z => {
@@ -212,7 +212,7 @@ fn handle_keypress(_app: &App, settings: &mut AppSettings, key: Key) {
         Key::Y => { if let Some(c) = settings.deleted_command {
             settings.adding_commands.push(c);
             match c {
-                parse::CommentlessGCodeExpr::Home => settings.current_pos.push(Vector2::zero()),
+                parse::CommentlessGCodeExpr::Home => settings.current_pos.push(Vec2::ZERO),
                 parse::CommentlessGCodeExpr::Move { X: x, Y: y }
                 | parse::CommentlessGCodeExpr::Arc{ CLKW: _, X: x, Y: y, I: _, J: _ } => settings.current_pos.push(pt2(x, y)),
                 parse::CommentlessGCodeExpr::Pen(_) => { settings.pen_mode = !settings.pen_mode; }
@@ -308,7 +308,7 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                 } else if settings.debug_lvl > 0 {
                     draw.line().points(current * settings.scale + origin, origin).rgb(0.7, 0.7, 0.7);
                 }
-                current = Vector2::zero();
+                current = Vec2::ZERO;
             },
             Move {X: x, Y: y}  => {
                 let p = pt2(*x, *y);
@@ -316,7 +316,7 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                     if is_pen_down {
                         draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).color(BLACK).weight(2.0);
                     } else {
-                        draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7);
+                        draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7).head_width(3.0);
                     }
                 } else {
                     if is_pen_down {
@@ -344,24 +344,24 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                     draw.ellipse().xy(a).w_h(4.0, 4.0).color(BLACK);
                 }
                 let a = - C;
-                let r2 = a.magnitude2();
-                let steps = ((r2.sqrt() * 7.2) as usize).min(36);
+                let r2 = a.length_squared();
+                let steps = ((r2.sqrt() * 3.6) as usize).min(18);
                 let translation = (current + C) * settings.scale + origin;
-                let anglestep = if (B - current).magnitude2() < settings.treshold { // make circle
+                let anglestep = if B.distance_squared(current) < settings.treshold { // make circle
                     2.0 * PI / steps as f32
                 } else {
                     let b = a + B - current;
-                    if (r2 - b.magnitude2()).abs() > settings.treshold {
+                    if (r2 - b.length_squared()).abs() > settings.treshold {
                         println!("Cannot draw arc in line {}, (I,J) is no center.", l + 1)
                     }
                     let mut anglediff = a.angle_between(b);
                     if *clkw {
-                        if (a.rotate(anglediff) - b).magnitude2() < settings.treshold { // rotate `a` in G3 direction
+                        if (a.rotate(anglediff) - b).length_squared() < settings.treshold { // rotate `a` in G3 direction
                             anglediff = 2.0 * PI - anglediff;
                         }
                         -anglediff / steps as f32
                     } else {
-                        if (a.rotate(-anglediff) - b).magnitude2() < settings.treshold { // rotate `a` in G2 direction
+                        if (a.rotate(-anglediff) - b).length_squared() < settings.treshold { // rotate `a` in G2 direction
                             anglediff = 2.0 * PI - anglediff;
                         }
                         anglediff / steps as f32
@@ -387,7 +387,7 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                 } else if settings.debug_lvl > 0 {
                     draw.line().points(current * settings.scale + origin, origin).rgb(0.7, 0.7, 0.7);
                 }
-                current = Vector2::zero();
+                current = Vec2::ZERO;
             },
             Move {X: x, Y: y}  => {
                 let p = pt2(*x, *y);
@@ -395,7 +395,7 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                     if is_pen_down {
                         draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).color(BLACK).weight(2.0);
                     } else {
-                        draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7);
+                        draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7).head_width(3.0);
                     }
                 } else {
                     if is_pen_down {
@@ -423,24 +423,24 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                     draw.ellipse().xy(a).w_h(4.0, 4.0).color(BLACK);
                 }
                 let a = - C;
-                let r2 = a.magnitude2();
+                let r2 = a.length_squared();
                 let steps = ((r2.sqrt() * 3.6) as usize).min(18);
                 let translation = (current + C) * settings.scale + origin;
-                let anglestep = if (B - current).magnitude2() < settings.treshold { // make circle
+                let anglestep = if B.distance_squared(current) < settings.treshold { // make circle
                     2.0 * PI / steps as f32
                 } else {
                     let b = a + B - current;
-                    if (r2 - b.magnitude2()).abs() > settings.treshold {
+                    if (r2 - b.length_squared()).abs() > settings.treshold {
                         println!("Cannot draw arc in new line {}, (I,J) is no center.", l + 1)
                     }
                     let mut anglediff = a.angle_between(b);
                     if *clkw {
-                        if (a.rotate(anglediff) - b).magnitude2() < settings.treshold { // rotate `a` in G3 direction
+                        if (a.rotate(anglediff) - b).length_squared() < settings.treshold { // rotate `a` in G3 direction
                             anglediff = 2.0 * PI - anglediff;
                         }
                         -anglediff / steps as f32
                     } else {
-                        if (a.rotate(-anglediff) - b).magnitude2() < settings.treshold { // rotate `a` in G2 direction
+                        if (a.rotate(-anglediff) - b).length_squared() < settings.treshold { // rotate `a` in G2 direction
                             anglediff = 2.0 * PI - anglediff;
                         }
                         anglediff / steps as f32
@@ -535,15 +535,8 @@ fn draw_overlay(draw: &Draw, win: &Rect, settings: &AppSettings) {
 /// calculates the nearest corresponding point on the grid. (nannou coords, plotter cords)
 fn get_grid_node(pos: Point2, win: &Rect, settings: &AppSettings) -> (Point2, Point2) {
     let draw_area = win.pad(20.0).pad_left(10.0).pad_top(10.0);
-    let p = (pos - draw_area.corner_at_index(3).unwrap()) / settings.scale;
-    let p = p.map(|x| {
-        let n = f32::trunc( x / settings.grid_size );
-        if x % settings.grid_size <= 0.5 * settings.grid_size {
-            n * settings.grid_size
-        } else {
-            (n + 1.0) * settings.grid_size
-        }
-    });
-    let pos = p * settings.scale + draw_area.corner_at_index(3).unwrap();
+    let p = (pos - draw_area.bottom_left()) / settings.scale;
+    let p = (p / settings.grid_size).round() * settings.grid_size; // to next grid corner
+    let pos = p * settings.scale + draw_area.bottom_left();
     (pos, p)
 }
