@@ -23,7 +23,7 @@ The application is programmed in rust with the [nannou library](https://nannou.c
 - `-d {}`, `--debug {}`: This enables debugging and can take values up to 3. While running, this can be changed with the key <kbd>D</kbd>
 - `-s {}`, `--scale {}`: This scales the whole view. While running you can access it with the <kbd>+</kbd>(might be <kbd>=</kbd> on your PC) and <kbd>-</kbd> keys
 - `-g {}`, `--gridsize`: This describes the gridsize used. While running you can access it with the key <kbd>G</kbd>
-- the flag `--hot`, for hot reloading of the gcode file. Alternatively you can update in the app with <kbd>R</kbd>
+- the flag `--hot`, for hot reloading of the gcode file. Alternatively you can update in the app with <kbd>R</kbd> or <kbd>F5</kbd>
 - and other arguments as `--treshold`, `--wwidth` and `-wheight`.
 
 It furthermore supports a subcommand `transform`, which

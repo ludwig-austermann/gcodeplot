@@ -58,7 +58,7 @@ fn main() {
 fn start_app(app: &App) -> AppSettings {
 
     let matches = clap_app!(myapp =>
-        (version: "0.3.0")
+        (version: "0.3.1")
         (author: "Ludwig Austermann <github.com/ludwig-austermann/gcodeplot>")
         (about: "Draw simple gcode.")
         (@arg INPUT: +required "Sets the input g-code file to use")
@@ -178,7 +178,7 @@ fn update(_app: &App, settings: &mut AppSettings, _update: Update) {
 fn handle_keypress(_app: &App, settings: &mut AppSettings, key: Key) {
     let step = if settings.control_pressed {1.0} else {0.2};
     match key {
-        Key::R => { settings.load_file() },
+        Key::R | Key::F5 => { settings.load_file() },
         Key::D => if settings.shift_pressed && settings.debug_lvl > 0 {
             settings.debug_lvl -= 1;
         } else if settings.debug_lvl < DEBUG_MAX {
@@ -223,7 +223,8 @@ fn handle_keypress(_app: &App, settings: &mut AppSettings, key: Key) {
         Key::P => {
             settings.pen_mode = !settings.pen_mode;
             settings.adding_commands.push(parse::CommentlessGCodeExpr::Pen(settings.pen_mode));
-        }
+        },
+        Key::F1 => { println!("For help visit: https://github.com/ludwig-austermann/gcodeplot/blob/main/readme.md") }
         _ => {}
     }
 }
@@ -316,7 +317,7 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                     if is_pen_down {
                         draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).color(BLACK).weight(2.0);
                     } else {
-                        draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7);
+                        draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7).head_width(3.0);
                     }
                 } else {
                     if is_pen_down {
@@ -395,7 +396,7 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                     if is_pen_down {
                         draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).color(BLACK).weight(2.0);
                     } else {
-                        draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7);
+                        draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7).head_width(3.0);
                     }
                 } else {
                     if is_pen_down {
@@ -424,7 +425,7 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                 }
                 let a = - C;
                 let r2 = a.magnitude2();
-                let steps = ((r2.sqrt() * 3.6) as usize).min(18);
+                let steps = ((r2.sqrt() * 3.6) as usize).max(18);
                 let translation = (current + C) * settings.scale + origin;
                 let anglestep = if (B - current).magnitude2() < settings.treshold { // make circle
                     2.0 * PI / steps as f32
