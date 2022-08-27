@@ -57,3 +57,4 @@ TODO:
 - [X] draw mode?
 - [ ] more debug options, e.g. show coordinates
 - [ ] autoscale the view, using for instance <kbd>A</kbd>.
+- [ ] gcode to svg output
