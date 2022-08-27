@@ -1,12 +1,82 @@
 use nannou::prelude::*;
-use clap::clap_app;
+use clap::{Parser, Subcommand, Args, ArgGroup};
 #[macro_use]
 extern crate pest_derive;
 
 mod parse;
+use parse::CommentlessGCodeExpr;
 
 const DEBUG_MAX: u8 = 3;
 
+#[derive(Parser)]
+#[clap(version, author, about = "Draw simple gcode.")]
+struct CliOptions {
+    /// Sets the input g-code file to use
+    #[clap(value_parser)]
+    input: String,
+    /// This enables debugging and can take values up to 3. While running, this can be changed with the key `D`.
+    #[clap(short, action = clap::ArgAction::Count)]
+    debug: u8,
+    #[clap(subcommand)]
+    command: Option<SubCommands>,
+    #[clap(flatten)]
+    display: DisplayCliOptions,
+}
+
+#[derive(Subcommand)]
+enum SubCommands {
+    Display(DisplayCliOptions), // default option
+    Transform(TransformCliOptions)
+}
+
+#[derive(Args)]
+#[clap(about = "default option")]
+struct DisplayCliOptions {
+    /// Enlarges the grid by scale. This can be changed while running with the `+`(`=`) and `-` keys.
+    #[clap(short, long, default_value_t = 1.0)]
+    scale: f32,
+    /// Sets the treshold of number errors in your file.
+    #[clap(short, long, value_parser, default_value_t = 1e-5)]
+    treshold: f32,
+    /// Set the window width.
+    #[clap(short = 'w', long = "wwidth", value_parser, default_value_t = 800)]
+    windowwidth: u32,
+    /// Set the window height.
+    #[clap(short = 'h', long = "wheight", value_parser, default_value_t = 600)]
+    windowheight: u32,
+    /// Sets the size of the small grid. The larger grid is always 5times as raw. While running, this can be changed with the key `G`.
+    #[clap(short, long, value_parser, default_value_t = 10.0)]
+    gridsize: f32,
+    /// Enables hot reloading of the g-code file. Default is off. You can alternatively update the view with the key `R`.
+    #[clap(long = "hot", action)]
+    hotreloading: bool
+}
+
+#[derive(Args)]
+#[clap(version = "0.1.1", about = "Transform all coordinates in the INPUT file.")]
+#[clap(
+    group(ArgGroup::new("x axis").args(&["x", "nx"])),
+    group(ArgGroup::new("y axis").args(&["y", "ny"]))
+)]
+struct TransformCliOptions {
+    /// Move along the X axis.
+    #[clap(short = 'X')]
+    x: Option<f32>,
+    /// Move along the Y axis.
+    #[clap(short = 'Y')]
+    y: Option<f32>,
+    /// Move along the -X axis.
+    #[clap(short = 'x')]
+    nx: Option<f32>,
+    /// Move along the -Y axis.
+    #[clap(short = 'y')]
+    ny: Option<f32>,
+    /// Scale everything. (Note: scaling happens before translation.)
+    #[clap(short = 'S', default_value_t = 1.0)]
+    scale: f32,
+}
+
+enum DrawMode { None, G0, G1, G2, G3 }
 struct AppSettings {
     filename: String,
     scale: f32,
@@ -14,15 +84,15 @@ struct AppSettings {
     debug_lvl: u8,
     treshold: f32,
     hotreloading: bool,
-    commands: Vec<(usize, parse::CommentlessGCodeExpr)>,
+    commands: Vec<(usize, CommentlessGCodeExpr)>,
     shift_pressed: bool,
     control_pressed: bool,
     mouse_pos: Option<Point2>,
-    adding_commands: Vec<parse::CommentlessGCodeExpr>,
-    deleted_command: Option<parse::CommentlessGCodeExpr>,
+    adding_commands: Vec<CommentlessGCodeExpr>,
+    deleted_command: Option<CommentlessGCodeExpr>,
     current_pos: Vec<Point2>,
     saved: bool,
-    current_command: u8, // only G1, G2, G3
+    current_command: DrawMode,
     temp_point: Option<Point2>,
     pen_mode: bool,
 }
@@ -31,18 +101,41 @@ impl AppSettings {
     /// loads a gcode file to a vector of CommentlessGCodeExpr
     fn load_file(&mut self) {
         let file = std::fs::read_to_string(&self.filename).expect(&format!("Error opening `{}`.", &self.filename));
-        self.commands = parse::parse_gcode_file(&file).expect("problem parsing").iter()
-            .filter_map(|(l, c)| match c {
-                parse::GCodeExpr::Comment(_) => None,
-                parse::GCodeExpr::Pen(_) => { self.pen_mode = !self.pen_mode; Some((*l, c.to_commentless())) },
-                _ => Some((*l, c.to_commentless()))
+        self.commands = parse::parse_gcode_file_commentless(&file).expect("problem parsing").iter()
+            .map(|(l, c)| match c {
+                CommentlessGCodeExpr::Pen(_) => { self.pen_mode = !self.pen_mode; (*l, *c) },
+                _ => (*l, *c)
             }).collect();
         for (_, c) in self.commands.iter().rev() {
             match c {
-                parse::CommentlessGCodeExpr::Move { X: x, Y: y }
-                | parse::CommentlessGCodeExpr::Arc{ CLKW: _, X: x, Y: y, I: _, J: _ } => { self.current_pos = vec![pt2(*x, *y)]; break },
+                CommentlessGCodeExpr::Move { X: x, Y: y }
+                | CommentlessGCodeExpr::Arc{ CLKW: _, X: x, Y: y, I: _, J: _ } => { self.current_pos = vec![pt2(*x, *y)]; break },
                 _ => {}
             }
+        }
+    }
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        AppSettings {
+            filename: "".to_owned(),
+            scale: 1.0,
+            grid_size: 10.0,
+            debug_lvl: 0,
+            treshold: 1e-5,
+            hotreloading: false,
+            commands: Vec::new(),
+            shift_pressed: false,
+            control_pressed: false,
+            mouse_pos: None,
+            adding_commands: Vec::new(),
+            deleted_command: None,
+            current_pos: vec![Vec2::ZERO],
+            saved: true,
+            current_command: DrawMode::None,
+            temp_point: None,
+            pen_mode: false, // at first is the pen up
         }
     }
 }
@@ -56,57 +149,13 @@ fn main() {
 /// 2. if   subcommand execute it
 ///    else build app and continue
 fn start_app(app: &App) -> AppSettings {
-
-    let matches = clap_app!(myapp =>
-        (version: "0.3.1")
-        (author: "Ludwig Austermann <github.com/ludwig-austermann/gcodeplot>")
-        (about: "Draw simple gcode.")
-        (@arg INPUT: +required "Sets the input g-code file to use")
-        (@arg debug: +takes_value -d "This enables debugging and can take values up to 3. While running, this can be changed with the key `D`.")
-        (@arg scale: +takes_value -s --scale "Enlarges the grid by scale. This can be changed while running with the `+`(`=`) and `-` keys.")
-        (@arg treshold: +takes_value -t --treshold "Sets the treshold of number errors in your file. Default is 1e-5.")
-        (@arg windowwidth: +takes_value -w --wwidth "Set the window width. Default is 800.")
-        (@arg windowheight: +takes_value -h --wheight "Set the window height. Default is 600.")
-        (@arg gridsize: +takes_value -g --gridsize "Sets the size of the small grid. (Defaults to 10). The larger grid is always 5times as raw. While running, this can be changed with the key `G`.")
-        (@arg hotreloading: --hot "Enables hot reloading of the g-code file. Default is off. You can alternatively update the view with the key `R`.")
-        (@subcommand transform =>
-            (about: "Transform all coordinates in the INPUT file.")
-            (version: "0.1")
-            (@arg X: +takes_value -X "Move along the X axis.")
-            (@arg Y: +takes_value -Y "Move along the Y axis.")
-            (@arg nX: +takes_value -x "Move along the -X axis.")
-            (@arg nY: +takes_value -y "Move along the -Y axis.")
-            (@arg scale: +takes_value -S "Scale everything. (Note: scaling happens before translation.)")
-        )
-    ).get_matches();
-
-    if let Some(submatches) = matches.subcommand_matches("transform") {
-        let filename = matches.value_of("INPUT").unwrap();
-        let file = std::fs::read_to_string(filename).expect(&format!("Error opening `{}`.", filename));
-        let commands = parse::parse_gcode_file(&file).expect("problem parsing");
-        let dx = submatches.value_of_t("X").unwrap_or(- submatches.value_of_t("nX").unwrap_or(-0.0));
-        let dy = submatches.value_of_t("Y").unwrap_or(- submatches.value_of_t("nY").unwrap_or(-0.0));
-        let ds = submatches.value_of_t("scale").unwrap_or(1.0);
-        let mut newcmds = Vec::with_capacity(commands.len());
-        for (l, cmd) in commands {
-            use parse::GCodeExpr::*;
-            newcmds.push((l,
-                match cmd {
-                    Move { X: x, Y: y } => Move { X: x * ds + dx, Y: y * ds + dy },
-                    Arc { CLKW: clkw, X: x, Y: y, I: i, J: j } => Arc {
-                        CLKW: clkw, X: x * ds + dx, Y: y * ds + dy, I: i * ds, J: j * ds
-                    },
-                    other => other,
-                }))
-        }
-        parse::save(&format!("{}_transformed.gcode", filename.strip_suffix(".gcode").expect("Expected gcode file")), newcmds);
-    } else {
+    let opts = CliOptions::parse();
+    
+    // so one has not to write the function twice
+    fn default_command(app: &App, opts_input: &String, opts_debug: u8, subopts: &DisplayCliOptions) -> AppSettings {
         app.new_window()
             .title("GCodePlot")
-            .size(
-                matches.value_of_t("windowwidth").unwrap_or(800),
-                matches.value_of_t("windowheight").unwrap_or(600)
-            )
+            .size(subopts.windowwidth, subopts.windowheight)
             .key_pressed(handle_keypress)
             .key_released(handle_keyrelease)
             .mouse_moved(handle_mouse_move)
@@ -115,35 +164,51 @@ fn start_app(app: &App) -> AppSettings {
             .build()
             .unwrap();
 
-        //if matches.is_present("hotreloading") {
-        //    app.set_loop_mode(nannou::LoopMode::Rate { update_interval: std::time::Duration::from_secs(2) });
-        //} else {
-        //    app.set_loop_mode(nannou::LoopMode::loop_once());
-        //}
         app.set_loop_mode(nannou::LoopMode::rate_fps(1.0));
+        app.set_exit_on_escape(false);
+
+        let mut settings = AppSettings {
+            filename: opts_input.clone(),
+            scale: subopts.scale,
+            grid_size: subopts.gridsize,
+            debug_lvl: opts_debug,
+            treshold: subopts.treshold,
+            hotreloading: subopts.hotreloading,
+            ..Default::default()
+        };
+        settings.load_file();
+        settings
     }
 
-    let mut settings = AppSettings {
-        filename: matches.value_of("INPUT").unwrap().to_string(),
-        scale: matches.value_of_t("scale").unwrap_or(1.0),
-        grid_size: matches.value_of_t("gridsize").unwrap_or(10.0),
-        debug_lvl: matches.value_of_t("debug").unwrap_or(0) as u8,
-        treshold: matches.value_of_t("threshold").unwrap_or(1e-5),
-        hotreloading: matches.is_present("hotreloading"),
-        commands: Vec::new(),
-        shift_pressed: false,
-        control_pressed: false,
-        mouse_pos: None,
-        adding_commands: Vec::new(),
-        deleted_command: None,
-        current_pos: vec![Vec2::ZERO],
-        saved: true,
-        current_command: 0,
-        temp_point: None,
-        pen_mode: false, // at first is the pen up
-    };
-    settings.load_file();
-    settings
+    match opts.command {
+        Some(SubCommands::Display(subopts)) => default_command(app, &opts.input, opts.debug, &subopts),
+        None => default_command(app, &opts.input, opts.debug, &opts.display),
+        Some(SubCommands::Transform(subopts)) => {
+            let file = std::fs::read_to_string(&opts.input).expect(&format!("Error opening `{}`.", opts.input));
+            let commands = parse::parse_gcode_file(&file).expect("problem parsing");
+            let dx = subopts.x.unwrap_or(subopts.nx.unwrap_or(0.0));
+            let dy = subopts.y.unwrap_or(subopts.ny.unwrap_or(0.0));
+            let ds = subopts.scale;
+
+            let mut newcmds = Vec::with_capacity(commands.len());
+            for (l, cmd) in commands {
+                use parse::{GCodeExpr::*, CommentlessGCodeExpr::*};
+                newcmds.push((l,
+                    match cmd {
+                        Code(Move { X: x, Y: y }) => Code(Move { X: x * ds + dx, Y: y * ds + dy }),
+                        Code(LinMove { X: x, Y: y }) => Code(LinMove { X: x * ds + dx, Y: y * ds + dy }),
+                        Code(Arc { CLKW: clkw, X: x, Y: y, I: i, J: j }) => Code(Arc {
+                            CLKW: clkw, X: x * ds + dx, Y: y * ds + dy, I: i * ds, J: j * ds
+                        }),
+                        other => other,
+                    }))
+            }
+            parse::save(&format!("{}_transformed.gcode", opts.input.strip_suffix(".gcode").expect("Expected gcode file")), newcmds);
+
+            // do a sample Setting to return Setting
+            AppSettings::default()
+        }
+    }
 }
 
 /// describes how the window is displayed
@@ -175,7 +240,7 @@ fn update(_app: &App, settings: &mut AppSettings, _update: Update) {
 }
 
 /// handle keypress events
-fn handle_keypress(_app: &App, settings: &mut AppSettings, key: Key) {
+fn handle_keypress(app: &App, settings: &mut AppSettings, key: Key) {
     let step = if settings.control_pressed {1.0} else {0.2};
     match key {
         Key::R => { settings.load_file() },
@@ -193,18 +258,19 @@ fn handle_keypress(_app: &App, settings: &mut AppSettings, key: Key) {
         Key::Minus => { if settings.scale > step { settings.scale -= step; } },
         Key::LShift | Key::RShift => { settings.shift_pressed = true },
         Key::LControl | Key::RControl => { settings.control_pressed = true },
-        Key::Key1 => { settings.current_command = 1 },
-        Key::Key2 => { settings.current_command = 2 },
-        Key::Key3 => { settings.current_command = 3 },
+        Key::Key0 => { settings.current_command = DrawMode::G0 },
+        Key::Key1 => { settings.current_command = DrawMode::G1 },
+        Key::Key2 => { settings.current_command = DrawMode::G2 },
+        Key::Key3 => { settings.current_command = DrawMode::G3 },
         Key::H => {
-            settings.adding_commands.push(parse::CommentlessGCodeExpr::Home);
+            settings.adding_commands.push(CommentlessGCodeExpr::Home);
             settings.current_pos.push(Vec2::ZERO);
         }
-        Key::Key0 => { settings.current_command = 0; settings.temp_point = None },
+        Key::Escape => { settings.current_command = DrawMode::None; settings.temp_point = None },
         Key::Z => {
             settings.deleted_command = settings.adding_commands.pop();
             match settings.deleted_command {
-                Some(parse::CommentlessGCodeExpr::Pen(_)) => { settings.pen_mode = !settings.pen_mode; },
+                Some(CommentlessGCodeExpr::Pen(_)) => { settings.pen_mode = !settings.pen_mode; },
                 Some(_) => { settings.current_pos.pop(); },
                 None => {},
             } 
@@ -212,18 +278,19 @@ fn handle_keypress(_app: &App, settings: &mut AppSettings, key: Key) {
         Key::Y => { if let Some(c) = settings.deleted_command {
             settings.adding_commands.push(c);
             match c {
-                parse::CommentlessGCodeExpr::Home => settings.current_pos.push(Vec2::ZERO),
-                parse::CommentlessGCodeExpr::Move { X: x, Y: y }
-                | parse::CommentlessGCodeExpr::Arc{ CLKW: _, X: x, Y: y, I: _, J: _ } => settings.current_pos.push(pt2(x, y)),
-                parse::CommentlessGCodeExpr::Pen(_) => { settings.pen_mode = !settings.pen_mode; }
+                CommentlessGCodeExpr::Home => settings.current_pos.push(Vec2::ZERO),
+                CommentlessGCodeExpr::Move { X: x, Y: y } | CommentlessGCodeExpr::LinMove { X: x, Y: y }
+                | CommentlessGCodeExpr::Arc{ CLKW: _, X: x, Y: y, I: _, J: _ } => settings.current_pos.push(pt2(x, y)),
+                CommentlessGCodeExpr::Pen(_) => { settings.pen_mode = !settings.pen_mode; }
             }
             settings.deleted_command = None;
         }},
         Key::S => { parse::resave(&settings.filename, &settings.adding_commands); settings.saved = true; },
         Key::P => {
             settings.pen_mode = !settings.pen_mode;
-            settings.adding_commands.push(parse::CommentlessGCodeExpr::Pen(settings.pen_mode));
+            settings.adding_commands.push(CommentlessGCodeExpr::Pen(settings.pen_mode));
         }
+        Key::Q => { app.quit() }
         _ => {}
     }
 }
@@ -252,14 +319,19 @@ fn handle_mouse_press(app: &App, settings: &mut AppSettings, button: MouseButton
         MouseButton::Left => if let Some(pos) = settings.mouse_pos {
             let (_, p) = get_grid_node(pos, &app.main_window().rect(), settings);
             match settings.current_command {
-                1 => {
-                    settings.adding_commands.push(parse::CommentlessGCodeExpr::Move { X: p.x, Y: p.y });
+                DrawMode::G0 => {
+                    settings.adding_commands.push(CommentlessGCodeExpr::Move { X: p.x, Y: p.y });
+                    settings.current_pos.push(p);
+                    settings.saved = false;
+                }
+                DrawMode::G1 => {
+                    settings.adding_commands.push(CommentlessGCodeExpr::LinMove { X: p.x, Y: p.y });
                     settings.current_pos.push(p);
                     settings.saved = false;
                 },
-                2 => {
+                DrawMode::G2 => {
                     if let Some(pos) = settings.temp_point {
-                        settings.adding_commands.push(parse::CommentlessGCodeExpr::Arc {
+                        settings.adding_commands.push(CommentlessGCodeExpr::Arc {
                             CLKW: true, X: pos.x, Y: pos.y,
                             I: p.x - settings.current_pos.last().unwrap().x, J: p.y - settings.current_pos.last().unwrap().y
                         });
@@ -270,9 +342,9 @@ fn handle_mouse_press(app: &App, settings: &mut AppSettings, button: MouseButton
                         settings.temp_point = Some(p);
                     }
                 },
-                3 => {
+                DrawMode::G3 => {
                     if let Some(pos) = settings.temp_point {
-                        settings.adding_commands.push(parse::CommentlessGCodeExpr::Arc {
+                        settings.adding_commands.push(CommentlessGCodeExpr::Arc {
                             CLKW: false, X: pos.x, Y: pos.y,
                             I: p.x - settings.current_pos.last().unwrap().x, J: p.y - settings.current_pos.last().unwrap().y
                         });
@@ -283,7 +355,7 @@ fn handle_mouse_press(app: &App, settings: &mut AppSettings, button: MouseButton
                         settings.temp_point = Some(p);
                     }
                 },
-                _ => {},
+                DrawMode::None => {},
             }
         },
         MouseButton::Right => if let Some(pos) = settings.mouse_pos {
@@ -296,11 +368,11 @@ fn handle_mouse_press(app: &App, settings: &mut AppSettings, button: MouseButton
 
 /// draw the gcode on the given window.
 fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
+    use CommentlessGCodeExpr::*;
     let mut current = pt2(0.0, 0.0);
     let origin = vec2(win.left(), win.bottom());
     let mut is_pen_down = false;
-    for (l, cmd) in &settings.commands {
-        use parse::CommentlessGCodeExpr::*;
+    for (l, cmd) in settings.commands.iter().map(|i| (i.0, &i.1)).chain(settings.adding_commands.iter().enumerate()) {
         match cmd {
             Home => {
                 if is_pen_down {
@@ -311,6 +383,29 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                 current = Vec2::ZERO;
             },
             Move {X: x, Y: y}  => {
+                let p = pt2(*x, *y);
+                let diff = p - current;
+                let p_mid = diff.abs().min_element() * diff.signum() + current;
+                if settings.debug_lvl > 2 {
+                    if is_pen_down {
+                        draw.arrow().points(current * settings.scale + origin, p_mid * settings.scale + origin).color(BLACK).weight(2.0).head_width(3.0);
+                        draw.arrow().points(p_mid * settings.scale + origin, p * settings.scale + origin).color(BLACK).weight(2.0);
+                    } else {
+                        draw.arrow().points(current * settings.scale + origin, p_mid * settings.scale + origin).rgb(0.7, 0.7, 0.7).head_width(2.0);
+                        draw.arrow().points(p_mid * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7).head_width(3.0);
+                    }
+                } else {
+                    if is_pen_down {
+                        draw.line().points(current * settings.scale + origin, p_mid * settings.scale + origin).color(BLACK).weight(2.0);
+                        draw.line().points(p_mid * settings.scale + origin, p * settings.scale + origin).color(BLACK).weight(2.0);
+                    } else if settings.debug_lvl > 0 {
+                        draw.line().points(current * settings.scale + origin, p_mid * settings.scale + origin).rgb(0.7, 0.7, 0.7);
+                        draw.line().points(p_mid * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7);
+                    }
+                }
+                current = p;
+            },
+            LinMove {X: x, Y: y}  => {
                 let p = pt2(*x, *y);
                 if settings.debug_lvl > 2 {
                     if is_pen_down {
@@ -353,85 +448,6 @@ fn draw_gcode(draw: &Draw, win: &Rect, settings: &AppSettings) {
                     let b = a + B - current;
                     if (r2 - b.length_squared()).abs() > settings.treshold {
                         println!("Cannot draw arc in line {}, (I,J) is no center.", l + 1)
-                    }
-                    let mut anglediff = a.angle_between(b);
-                    if *clkw {
-                        if (a.rotate(anglediff) - b).length_squared() < settings.treshold { // rotate `a` in G3 direction
-                            anglediff = 2.0 * PI - anglediff;
-                        }
-                        -anglediff / steps as f32
-                    } else {
-                        if (a.rotate(-anglediff) - b).length_squared() < settings.treshold { // rotate `a` in G2 direction
-                            anglediff = 2.0 * PI - anglediff;
-                        }
-                        anglediff / steps as f32
-                    }
-                };
-                
-                let points = (0..=steps).map(|n| a.rotate(n as f32 * anglestep) * settings.scale + translation);
-                if is_pen_down {
-                    draw.polyline().weight(2.0).points(points).color(BLACK);
-                } else if settings.debug_lvl > 0 {
-                    draw.polyline().points(points).rgb(0.7, 0.7, 0.7);
-                }
-                current = B;
-            },
-        }
-    }
-    for (l, cmd) in settings.adding_commands.iter().enumerate() {
-        use parse::CommentlessGCodeExpr::*;
-        match cmd {
-            Home => {
-                if is_pen_down {
-                    draw.line().points(current * settings.scale + origin, origin).color(BLACK).weight(2.0);
-                } else if settings.debug_lvl > 0 {
-                    draw.line().points(current * settings.scale + origin, origin).rgb(0.7, 0.7, 0.7);
-                }
-                current = Vec2::ZERO;
-            },
-            Move {X: x, Y: y}  => {
-                let p = pt2(*x, *y);
-                if settings.debug_lvl > 2 {
-                    if is_pen_down {
-                        draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).color(BLACK).weight(2.0);
-                    } else {
-                        draw.arrow().points(current * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7).head_width(3.0);
-                    }
-                } else {
-                    if is_pen_down {
-                        draw.line().points(current * settings.scale + origin, p * settings.scale + origin).color(BLACK).weight(2.0);
-                    } else if settings.debug_lvl > 0 {
-                        draw.line().points(current * settings.scale + origin, p * settings.scale + origin).rgb(0.7, 0.7, 0.7);
-                    }
-                }
-                current = p;
-            },
-            Pen(down) => { is_pen_down = *down; },
-            Arc {CLKW: clkw, X: x, Y: y, I: i, J: j} => {
-                #[allow(non_snake_case)]
-                let B = pt2(*x, *y);
-                #[allow(non_snake_case)]
-                let C = pt2(*i, *j);
-                if settings.debug_lvl > 1 {
-                    let a = current * settings.scale + origin;
-                    let b = B * settings.scale + origin;
-                    let c = (current + C) * settings.scale + origin;
-                    draw.ellipse().xy(b).w_h(4.0, 4.0).color(BLACK);
-                    draw.line().points(a, c).color(RED).weight(0.3);
-                    draw.ellipse().xy(c).w_h(5.0, 5.0).color(RED);
-                    draw.line().points(c, b).color(RED).weight(0.3);
-                    draw.ellipse().xy(a).w_h(4.0, 4.0).color(BLACK);
-                }
-                let a = - C;
-                let r2 = a.length_squared();
-                let steps = ((r2.sqrt() * 3.6) as usize).min(18);
-                let translation = (current + C) * settings.scale + origin;
-                let anglestep = if B.distance_squared(current) < settings.treshold { // make circle
-                    2.0 * PI / steps as f32
-                } else {
-                    let b = a + B - current;
-                    if (r2 - b.length_squared()).abs() > settings.treshold {
-                        println!("Cannot draw arc in new line {}, (I,J) is no center.", l + 1)
                     }
                     let mut anglediff = a.angle_between(b);
                     if *clkw {
@@ -505,18 +521,19 @@ fn draw_overlay(draw: &Draw, win: &Rect, settings: &AppSettings) {
             draw.line().points(pos - pt2(0.0, 3.0), pos + pt2(0.0, 3.0)).rgb(0.7, 0.7, 0.7);
         }
         match settings.current_command {
-            1 => { draw.text("G1-XY").xy(pos + pt2(15.0, -5.0)).w(30.0).color(RED).left_justify(); },
-            2 => if settings.temp_point.is_none() {
+            DrawMode::G0 => { draw.text("G0-XY").xy(pos + pt2(15.0, -5.0)).w(30.0).color(RED).left_justify();}
+            DrawMode::G1 => { draw.text("G1-XY").xy(pos + pt2(15.0, -5.0)).w(30.0).color(RED).left_justify(); },
+            DrawMode::G2 => if settings.temp_point.is_none() {
                 draw.text("G2-XY").xy(pos + pt2(15.0, -5.0)).w(30.0).color(RED).left_justify();
             } else {
                 draw.text("G2-IJ").xy(pos + pt2(15.0, -5.0)).w(30.0).color(RED).left_justify();
             },
-            3 => if settings.temp_point.is_none() {
+            DrawMode::G3 => if settings.temp_point.is_none() {
                 draw.text("G3-XY").xy(pos + pt2(15.0, -5.0)).w(30.0).color(RED).left_justify();
             } else {
                 draw.text("G3-IJ").xy(pos + pt2(15.0, -5.0)).w(30.0).color(RED).left_justify();
             },
-            _ => {}
+            DrawMode::None => {}
         }
     }
     // info about state

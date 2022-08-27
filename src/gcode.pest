@@ -2,9 +2,10 @@ num = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
 int = { ("+" | "-")? ~ ASCII_DIGIT+ }
 
 expr = { cmd? ~ COMMENT? }
-cmd = _{ HOME | MOVE | PEN | ARC }
+cmd = _{ HOME | LINEARMOVE | MOVE | PEN | ARC }
 HOME = { "G28" }
-MOVE = { "G1" ~ ((X ~ Y) | (Y ~ X)) }
+MOVE = { ("G0" | "G00") ~ ((X ~ Y) | (Y ~ X)) }
+LINEARMOVE = { ("G1" | "G01") ~ ((X ~ Y) | (Y ~ X)) }
 ARC = { (CLKW | ANTICLKW) ~ (
 	(X ~ (
     	(Y ~ ((I ~ J) | (J ~ I))) |
@@ -24,8 +25,8 @@ ARC = { (CLKW | ANTICLKW) ~ (
         (Y ~ ((I ~ X) | (X ~ I)))
     ))
 ) }
-CLKW = { "G2" }
-ANTICLKW = { "G3" }
+CLKW = { ("G2" | "G02") }
+ANTICLKW = { ("G3" | "G03") }
 PEN = { "M280 P0 S" ~ num }
 
 X = { "X" ~ num }

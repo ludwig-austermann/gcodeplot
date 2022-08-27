@@ -1,13 +1,13 @@
 [package]
 name = "gcodeplot"
-version = "0.3.1"
-authors = ["ludwig-austermann"]
-edition = "2018"
+version = "0.4.0"
+authors = ["Ludwig Austermann <github.com/ludwig-austermann/gcodeplot>"]
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nannou = "0.17.0"
-clap = "3.0.0-beta.2"
-pest = "2.1.3"
-pest_derive = "2.1"
+nannou = "0.18"
+clap = { version = "3.2", features = ["derive"] }
+pest = "2.3"
+pest_derive = "2.3"
