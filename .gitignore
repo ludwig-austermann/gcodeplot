@@ -3,3 +3,4 @@ Cargo.lock
 simple.gcode
 test_transformed.gcode
 test_added.gcode
+/.vscode

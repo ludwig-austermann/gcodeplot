@@ -15,7 +15,7 @@ struct CliOptions {
     #[clap(value_parser)]
     input: String,
     /// This enables debugging and can take values up to 3. While running, this can be changed with the key `D`.
-    #[clap(short, action = clap::ArgAction::Count)]
+    #[clap(short, action = clap::ArgAction::Count, global = true)]
     debug: u8,
     #[clap(subcommand)]
     command: Option<SubCommands>,
@@ -150,10 +150,11 @@ fn main() {
 ///    else build app and continue
 fn start_app(app: &App) -> AppSettings {
     let opts = CliOptions::parse();
-    
-    // so one has not to write the function twice
-    fn default_command(app: &App, opts_input: &String, opts_debug: u8, subopts: &DisplayCliOptions) -> AppSettings {
-        app.new_window()
+
+    let cmd = opts.command.unwrap_or(SubCommands::Display(opts.display));
+    match cmd {
+        SubCommands::Display(subopts) => {
+            app.new_window()
             .title("GCodePlot")
             .size(subopts.windowwidth, subopts.windowheight)
             .key_pressed(handle_keypress)
@@ -164,26 +165,22 @@ fn start_app(app: &App) -> AppSettings {
             .build()
             .unwrap();
 
-        app.set_loop_mode(nannou::LoopMode::rate_fps(1.0));
-        app.set_exit_on_escape(false);
+            app.set_loop_mode(nannou::LoopMode::rate_fps(1.0));
+            app.set_exit_on_escape(false);
 
-        let mut settings = AppSettings {
-            filename: opts_input.clone(),
-            scale: subopts.scale,
-            grid_size: subopts.gridsize,
-            debug_lvl: opts_debug,
-            treshold: subopts.treshold,
-            hotreloading: subopts.hotreloading,
-            ..Default::default()
-        };
-        settings.load_file();
-        settings
-    }
-
-    match opts.command {
-        Some(SubCommands::Display(subopts)) => default_command(app, &opts.input, opts.debug, &subopts),
-        None => default_command(app, &opts.input, opts.debug, &opts.display),
-        Some(SubCommands::Transform(subopts)) => {
+            let mut settings = AppSettings {
+                filename: opts.input.clone(),
+                scale: subopts.scale,
+                grid_size: subopts.gridsize,
+                debug_lvl: opts.debug,
+                treshold: subopts.treshold,
+                hotreloading: subopts.hotreloading,
+                ..Default::default()
+            };
+            settings.load_file();
+            settings
+        },
+        SubCommands::Transform(subopts) => {
             let file = std::fs::read_to_string(&opts.input).expect(&format!("Error opening `{}`.", opts.input));
             let commands = parse::parse_gcode_file(&file).expect("problem parsing");
             let dx = subopts.x.unwrap_or(subopts.nx.unwrap_or(0.0));

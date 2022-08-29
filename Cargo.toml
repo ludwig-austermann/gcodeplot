@@ -1,6 +1,6 @@
 [package]
 name = "gcodeplot"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["Ludwig Austermann <github.com/ludwig-austermann/gcodeplot>"]
 edition = "2021"
 
