@@ -11,14 +11,28 @@
 
 `gcodeplot` is a simulated plotter of [G-code](http://en.wikipedia.org/wiki/G-code) files. It supports only
 - `G28`: **return to home** position
-- `G0 X{} Y{}`: **move**, move to `(X,Y)` (from current position) (note that you probably want to use `G1` instead)
-- `G1 X{} Y{}`: **linear move**, move directly to `(X,Y)` (from current position)
-- `G2 X{} Y{} I{} J{}`: (part-)**circular move in clockwise direction**, move to `(X,Y)` (from current position) along a circle with center in `CURRENTPOS + (I,J)`
-- `G3 X{} Y{} I{} J{}`: (part-)**circular move in anticlockwise direction**, move to `(X,Y)` (from current position) along a circle with center in `CURRENTPOS + (I,J)`
-- `M280 P0 S{}`: **Set the pen** as follows, if `S>=40` down (which means it can draw) and else up
+- `G0 X{NUM} Y{NUM}`: **move**, move to `(X,Y)` (from current position) (note that you probably want to use `G1` instead)
+- `G1 X{NUM} Y{NUM}`: **linear move**, move directly to `(X,Y)` (from current position)
+- `G2 X{NUM} Y{NUM} I{NUM} J{NUM}`: (part-)**circular move in clockwise direction**, move to `(X,Y)` (from current position) along a circle with center in `CURRENTPOS + (I,J)`
+- `G3 X{NUM} Y{NUM} I{NUM} J{NUM}`: (part-)**circular move in anticlockwise direction**, move to `(X,Y)` (from current position) along a circle with center in `CURRENTPOS + (I,J)`
+- `M280 P0 S{NUM}`: **Set the pen** as follows, if `S>=40` down (which means it can draw) and else up
 - `;{}`: **comment**, which can be put on seperate line or after a regular command
 
-## Arguments and features
+### Parsing Abilities
+
+The `gcode` parser allows for arbitrary many, including zero, spacing characters (' ' & '\t') between instruction name and argument name and between argument name and number expression. It is also allowed to change the order of arguments. For example this is allowed:
+```text
+G0   X  10  Y  20
+G1   Y  10  X  20
+G1X20Y50
+```
+Furthermore are number expressions treated as 32 bit floats internally and parsed as such, which allows the following expressions:
+```text
+G1 X 00001 Y 1.000
+G1 X 0.1e5 Y 1e-2
+```
+
+## Arguments And Features
 
 The application is programmed in rust with the [nannou library](https://nannou.cc/) for displaying and the [pest library](https://pest.rs/) for parsing. It supports the following command line arguments:
 - `INPUT` (required): sets the gcode file to plot
@@ -31,7 +45,7 @@ The application is programmed in rust with the [nannou library](https://nannou.c
 It furthermore supports a subcommand `transform`, which
 allows you to transform a file by translation and dilation.
 
-## Keyboard commands and editing features
+## Keyboard Commands And Editing Features
 
 In the graphical app, a few keyboard commands are enabled. To increase a value corresponding to a <kbd>key</kbd>, just press <kbd>key</kbd> and to decrease press <kbd>shift</kbd> + <kbd>key</kbd>. For bigger steps combine these combination with a further <kbd>ctrl</kbd>.
 
@@ -46,7 +60,7 @@ and choose the coordinate with a left mouse click. One also can now undo and red
 
 Last but not least, right-clicking prints the mouse coordinates to console and <kbd>Q</kbd> quits the application.
 
-## Room to improve
+## Room To Improve
 
 While the app can be used for many purposes, it is in a early development phase. Tests are missing and not everything is programmed the clever way. If you want to improve it feel welcome to contribute.
 
