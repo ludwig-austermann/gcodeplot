@@ -72,3 +72,12 @@ TODO:
 - [ ] more debug options, e.g. show coordinates
 - [ ] autoscale the view, using for instance <kbd>A</kbd>.
 - [ ] gcode to svg output
+- [ ] support `R` argument: 
+- [ ] support `G90`/`G91`: rel. & abs. coordinates
+- [ ] support `U{}`/`V{}`: rel. coordinates
+- [ ] support `G90.1`/`G91.1`: rel. & abs. coordinates for `I` and `J` arguments
+- [ ] support `G68`/`G69`: coordinate rotation
+- [ ] support `O{}`, `M98`, `M99`, `P{}`, `M2`: to handle subprograms
+- [ ] support `L`
+- [ ] support for switching features on and off in a config toml file
+- [ ] support for opinionated formating off a file, with options: minimal,

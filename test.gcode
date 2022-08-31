@@ -1,4 +1,4 @@
-G0028
+G028
 G0  X 20 Y 28
 M280 P0 S50
 G3  X   18  Y   30  I   -2  J   0           ; Between arguments arbitrarily many whitespaces are allowed. These include ' ' and '\t'.

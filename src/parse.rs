@@ -233,7 +233,8 @@ pub fn save(filename: &str, commands: Vec<(usize, GCodeExpr)>) {
 }
 
 /// saves new commands on tope
-pub fn resave(filename: &str, commands: &Vec<CommentlessGCodeExpr>) {
+pub fn resave(filename: Option<&str>, commands: &Vec<CommentlessGCodeExpr>) {
+    if let Some(filename) = filename {
         let oldfile = std::fs::read_to_string(filename).expect("unable to open the file.");
         std::fs::write(
             format!("{}_added.gcode", filename.strip_suffix(".gcode").expect("Expected gcode file")),
@@ -241,4 +242,5 @@ pub fn resave(filename: &str, commands: &Vec<CommentlessGCodeExpr>) {
                 commands.iter().map(|cmd| cmd.as_str()).collect::<Vec<String>>().join("\n")
             )
         ).expect("Unable to save the gcode.");
+    }       
 }

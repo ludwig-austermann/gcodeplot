@@ -9,18 +9,15 @@ use parse::CommentlessGCodeExpr;
 const DEBUG_MAX: u8 = 3;
 
 #[derive(Parser)]
-#[clap(version, author, about = "Draw simple gcode.")]
+#[clap(version, author, about = "Draw simple gcode.", args_conflicts_with_subcommands = true)]
 struct CliOptions {
-    /// Sets the input g-code file to use
-    #[clap(value_parser)]
-    input: String,
     /// This enables debugging and can take values up to 3. While running, this can be changed with the key `D`.
     #[clap(short, action = clap::ArgAction::Count, global = true)]
     debug: u8,
     #[clap(subcommand)]
     command: Option<SubCommands>,
     #[clap(flatten)]
-    display: DisplayCliOptions,
+    display: Box<DisplayCliOptions>,
 }
 
 #[derive(Subcommand)]
@@ -32,6 +29,9 @@ enum SubCommands {
 #[derive(Args)]
 #[clap(about = "default option")]
 struct DisplayCliOptions {
+    /// Sets the input g-code file to use
+    #[clap(value_parser)]
+    input: Option<String>,
     /// Enlarges the grid by scale. This can be changed while running with the `+`(`=`) and `-` keys.
     #[clap(short, long, default_value_t = 1.0)]
     scale: f32,
@@ -39,10 +39,10 @@ struct DisplayCliOptions {
     #[clap(short, long, value_parser, default_value_t = 1e-5)]
     treshold: f32,
     /// Set the window width.
-    #[clap(short = 'w', long = "wwidth", value_parser, default_value_t = 800)]
+    #[clap(short = 'W', long = "wwidth", value_parser, default_value_t = 800)]
     windowwidth: u32,
     /// Set the window height.
-    #[clap(short = 'h', long = "wheight", value_parser, default_value_t = 600)]
+    #[clap(short = 'H', long = "wheight", value_parser, default_value_t = 600)]
     windowheight: u32,
     /// Sets the size of the small grid. The larger grid is always 5times as raw. While running, this can be changed with the key `G`.
     #[clap(short, long, value_parser, default_value_t = 10.0)]
@@ -59,6 +59,9 @@ struct DisplayCliOptions {
     group(ArgGroup::new("y axis").args(&["y", "ny"]))
 )]
 struct TransformCliOptions {
+    /// Sets the input g-code file to use
+    #[clap(value_parser)]
+    input: String,
     /// Move along the X axis.
     #[clap(short = 'X')]
     x: Option<f32>,
@@ -78,7 +81,7 @@ struct TransformCliOptions {
 
 enum DrawMode { None, G0, G1, G2, G3 }
 struct AppSettings {
-    filename: String,
+    filename: Option<String>,
     scale: f32,
     grid_size: f32,
     debug_lvl: u8,
@@ -100,17 +103,19 @@ struct AppSettings {
 impl AppSettings {
     /// loads a gcode file to a vector of CommentlessGCodeExpr
     fn load_file(&mut self) {
-        let file = std::fs::read_to_string(&self.filename).expect(&format!("Error opening `{}`.", &self.filename));
-        self.commands = parse::parse_gcode_file_commentless(&file).expect("problem parsing").iter()
-            .map(|(l, c)| match c {
-                CommentlessGCodeExpr::Pen(_) => { self.pen_mode = !self.pen_mode; (*l, *c) },
-                _ => (*l, *c)
-            }).collect();
-        for (_, c) in self.commands.iter().rev() {
-            match c {
-                CommentlessGCodeExpr::Move { X: x, Y: y }
-                | CommentlessGCodeExpr::Arc{ CLKW: _, X: x, Y: y, I: _, J: _ } => { self.current_pos = vec![pt2(*x, *y)]; break },
-                _ => {}
+        if let Some(filename) = &self.filename {
+            let file = std::fs::read_to_string(&filename).expect(&format!("Error opening `{}`.", &filename));
+            self.commands = parse::parse_gcode_file_commentless(&file).expect("problem parsing").iter()
+                .map(|(l, c)| match c {
+                    CommentlessGCodeExpr::Pen(_) => { self.pen_mode = !self.pen_mode; (*l, *c) },
+                    _ => (*l, *c)
+                }).collect();
+            for (_, c) in self.commands.iter().rev() {
+                match c {
+                    CommentlessGCodeExpr::Move { X: x, Y: y }
+                    | CommentlessGCodeExpr::Arc{ CLKW: _, X: x, Y: y, I: _, J: _ } => { self.current_pos = vec![pt2(*x, *y)]; break },
+                    _ => {}
+                }
             }
         }
     }
@@ -119,7 +124,7 @@ impl AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         AppSettings {
-            filename: "".to_owned(),
+            filename: None,
             scale: 1.0,
             grid_size: 10.0,
             debug_lvl: 0,
@@ -151,7 +156,7 @@ fn main() {
 fn start_app(app: &App) -> AppSettings {
     let opts = CliOptions::parse();
 
-    let cmd = opts.command.unwrap_or(SubCommands::Display(opts.display));
+    let cmd = opts.command.unwrap_or(SubCommands::Display(*opts.display));
     match cmd {
         SubCommands::Display(subopts) => {
             app.new_window()
@@ -169,7 +174,7 @@ fn start_app(app: &App) -> AppSettings {
             app.set_exit_on_escape(false);
 
             let mut settings = AppSettings {
-                filename: opts.input.clone(),
+                filename: subopts.input.clone(),
                 scale: subopts.scale,
                 grid_size: subopts.gridsize,
                 debug_lvl: opts.debug,
@@ -181,7 +186,7 @@ fn start_app(app: &App) -> AppSettings {
             settings
         },
         SubCommands::Transform(subopts) => {
-            let file = std::fs::read_to_string(&opts.input).expect(&format!("Error opening `{}`.", opts.input));
+            let file = std::fs::read_to_string(&subopts.input).expect(&format!("Error opening `{}`.", subopts.input));
             let commands = parse::parse_gcode_file(&file).expect("problem parsing");
             let dx = subopts.x.unwrap_or(subopts.nx.unwrap_or(0.0));
             let dy = subopts.y.unwrap_or(subopts.ny.unwrap_or(0.0));
@@ -200,7 +205,7 @@ fn start_app(app: &App) -> AppSettings {
                         other => other,
                     }))
             }
-            parse::save(&format!("{}_transformed.gcode", opts.input.strip_suffix(".gcode").expect("Expected gcode file")), newcmds);
+            parse::save(&format!("{}_transformed.gcode", subopts.input.strip_suffix(".gcode").expect("Expected gcode file")), newcmds);
 
             // do a sample Setting to return Setting
             AppSettings::default()
@@ -282,7 +287,7 @@ fn handle_keypress(app: &App, settings: &mut AppSettings, key: Key) {
             }
             settings.deleted_command = None;
         }},
-        Key::S => { parse::resave(&settings.filename, &settings.adding_commands); settings.saved = true; },
+        Key::S => { parse::resave(settings.filename.as_deref(), &settings.adding_commands); settings.saved = true; },
         Key::P => {
             settings.pen_mode = !settings.pen_mode;
             settings.adding_commands.push(CommentlessGCodeExpr::Pen(settings.pen_mode));
